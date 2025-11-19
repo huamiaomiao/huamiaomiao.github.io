@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Markdown 预览</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.5.1/github-markdown.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css"
+    />
+    <style>
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        background: #f6f8fa;
+        display: grid;
+        grid-template-rows: auto 1fr; /* 顶部工具栏 + 占满剩余 */
+        overflow: hidden; /* 禁止页面整体滚动 */
+      }
+      .toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        padding: 10px 16px;
+        background: #fff;
+        border-bottom: 1px solid #eaecef;
+      }
+      .container {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 24px 16px 64px;
+      }
+      .dropzone {
+        border: 1px dashed #c9d1d9;
+        border-radius: 8px;
+        padding: 16px;
+        color: #57606a;
+      }
+      .dropzone.dragover {
+        background: #f0f6ff;
+        border-color: #0969da;
+        color: #0969da;
+      }
+      .markdown-body {
+        box-sizing: border-box;
+        min-width: 200px;
+        max-width: 100%;
+      }
+      .markdown-body img {
+        max-width: 100%;
+      }
+      /* 分栏布局 */
+      .split {
+        display: flex;
+        height: 100%; /* 占满 grid 第二行 */
+        min-height: 0; /* 允许子元素在 flex 中滚动 */
+      }
+      .sidebar {
+        box-sizing: border-box;
+        width: 300px;
+        flex: 0 0 300px;
+        border-right: 1px solid #eaecef;
+        background: #fff;
+        padding: 8px;
+        overflow: auto;
+      }
+      .sidebar h3 {
+        margin: 8px 8px 6px;
+        font-size: 14px;
+        color: #24292f;
+      }
+      .main {
+        flex: 1;
+        min-width: 0;
+        overflow: auto; /* 仅右侧内容区滚动 */
+      }
+      /* 树组件样式 */
+      .tree {
+        list-style: none;
+        margin: 0;
+        padding: 0 4px 24px 4px;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .tree-item {
+        margin: 2px 0;
+      }
+      .tree-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 8px;
+        border-radius: 8px;
+        color: #24292f;
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        min-height: 32px;
+        transition: background 0.15s ease, color 0.15s ease;
+      }
+      .tree-row:hover {
+        background: var(--accent-hover);
+      }
+      .tree-row.active {
+        background: var(--accent-bg);
+        color: var(--accent-700);
+        box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.25);
+      }
+      .tree-row.active::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 16%;
+        width: 3px;
+        height: 68%;
+        background: var(--accent);
+        border-radius: 2px;
+      }
+      .tree-toggle {
+        width: 14px;
+        height: 14px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        color: #57606a;
+        transition: transform 0.18s ease;
+      }
+      /* 展开时让箭头旋转（若字符是 ▸ 也能形成视觉“向下”效果） */
+      .tree-item:not(.collapsed) > .tree-row .tree-toggle {
+        transform: rotate(90deg);
+      }
+      .tree-children {
+        margin-left: 16px;
+        padding-left: 12px;
+        list-style: none;
+        overflow: hidden;
+        max-height: 9999px;
+        opacity: 1;
+        transition: max-height 0.26s cubic-bezier(0.4, 0, 0.2, 1),
+          opacity 0.18s linear;
+        will-change: max-height, opacity;
+        /* border-left: 1px dashed #eaecef; */
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .tree-children {
+          transition: none;
+        }
+      }
+      /* 子级选中时，高亮父级文字与箭头颜色 */
+      .tree-item:has(.tree-children .tree-row.active) > .tree-row {
+        color: var(--accent-700);
+      }
+      .tree-item:has(.tree-children .tree-row.active) > .tree-row .tree-toggle {
+        color: var(--accent-700);
+      }
+      /* 文本单行省略，防止过长换行 */
+      .tree-row > span:last-child {
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .collapsed > .tree-children {
+        max-height: 0;
+        opacity: 0;
+      }
+      /* Markdown 细节美化 */
+      .container {
+        background: #fff;
+        border: 1px solid #eaecef;
+        border-radius: 12px;
+        box-shadow: 0 6px 24px rgba(140, 149, 159, 0.15);
+      }
+      :root {
+        --accent: #22c55e; /* 绿色主色 */
+        --accent-700: #16a34a;
+        --accent-bg: #eafaf1; /* 选中行背景 */
+        --accent-hover: #f0fdf4; /* 悬浮行背景 */
+      }
+      .markdown-body {
+        line-height: 1.75;
+        color: #24292f;
+      }
+      .markdown-body h1,
+      .markdown-body h2,
+      .markdown-body h3 {
+        scroll-margin-top: 72px;
+        letter-spacing: 0.2px;
+      }
+      .markdown-body blockquote {
+        background: #f0f6ff;
+        border-left: 4px solid #0969da;
+        color: #1f2328;
+        padding: 10px 14px;
+        border-radius: 8px;
+      }
+      .markdown-body table {
+        display: block;
+        width: 100%;
+        overflow: auto;
+        border-collapse: separate;
+        border-spacing: 0;
+        border: 1px solid #d0d7de;
+        border-radius: 8px;
+      }
+      .markdown-body table th,
+      .markdown-body table td {
+        border: 0;
+      }
+      .markdown-body table thead th {
+        background: #f6f8fa;
+        border-bottom: 1px solid #d0d7de;
+      }
+      .markdown-body table tr + tr td {
+        border-top: 1px solid #d0d7de;
+      }
+      .markdown-body img {
+        border-radius: 8px;
+        box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+      }
+      /* 代码：行内与代码块 */
+      .markdown-body :not(pre) > code {
+        background: #f6f8fa;
+        border: 1px solid #d0d7de;
+        border-radius: 6px;
+        padding: 0.15em 0.4em;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: #1f2328;
+      }
+      /* 代码块采用黑色主题（覆盖 highlight.js 样式） */
+      .markdown-body pre,
+      .markdown-body pre code,
+      .hljs {
+        background: #0d1117 !important;
+        color: #e6edf3 !important;
+      }
+      .hljs {
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        padding: 16px;
+        overflow: auto;
+      }
+      .markdown-body pre code {
+        background: transparent !important;
+        border: 0;
+        padding: 0;
+      }
+      /* 常见语法高亮颜色（GitHub Dark 类似调色） */
+      .hljs-comment,
+      .hljs-quote {
+        color: #8b949e !important;
+      }
+      .hljs-keyword,
+      .hljs-selector-tag,
+      .hljs-literal {
+        color: #ff7b72 !important;
+      }
+      .hljs-string,
+      .hljs-attr,
+      .hljs-template-variable {
+        color: #a5d6ff !important;
+      }
+      .hljs-number,
+      .hljs-built_in,
+      .hljs-builtin-name {
+        color: #79c0ff !important;
+      }
+      .hljs-function .hljs-title,
+      .hljs-title.function_ {
+        color: #d2a8ff !important;
+      }
+      .hljs-meta,
+      .hljs-meta .hljs-keyword {
+        color: #7ee787 !important;
+      }
+      /* HTML 标签与属性着色（提高优先级，覆盖主题） */
+      code.hljs .hljs-tag,
+      code.hljs .hljs-name,
+      .language-html .hljs-tag,
+      .language-xml .hljs-tag {
+        color: #7ee787 !important; /* 标签名/整体标签 */
+      }
+      code.hljs .hljs-attr,
+      code.hljs .hljs-attribute {
+        color: #e3b341 !important; /* 属性名：金色 */
+      }
+      code.hljs .hljs-string {
+        color: #a5d6ff !important; /* 属性值 */
+      }
+      code.hljs .hljs-meta,
+      code.hljs .hljs-symbol {
+        color: #79c0ff !important; /* 如 <!DOCTYPE> 等 */
+      }
+      /* 侧边树样式增强 */
+      .tree-row {
+        transition: background 0.2s ease, color 0.2s ease;
+      }
+      .tree-row.active {
+        box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.25);
+      }
+      .tree-children {
+        border-left-color: #d0d7de;
+      }
+      /* 滚动条细化（WebKit） */
+      ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #c9d1d9;
+        border-radius: 10px;
+        border: 2px solid transparent;
+        background-clip: content-box;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      /* 顶部标题样式 */
+      .toolbar {
+        gap: 16px;
+      }
+      .app-title {
+        font-weight: 600;
+        color: #24292f;
+        letter-spacing: 0.3px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <div class="app-title">📚 前端学习路径</div>
+    </div>
+    <div class="split">
+      <aside class="sidebar">
+        <nav id="treeRoot" aria-label="目录"></nav>
+      </aside>
+      <div class="main">
+        <div class="container">
+          <article
+            id="content"
+            class="markdown-body"
+            style="margin-top: 16px"
+          ></article>
+        </div>
+      </div>
+    </div>
+
+    <!-- 默认内嵌的 Markdown（用于本地直接打开时显示大纲） -->
+    <script id="embedded-md" type="text/markdown"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/build/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/build/languages/xml.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/build/languages/javascript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/build/languages/typescript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/build/languages/css.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/build/languages/json.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/build/languages/bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/build/languages/yaml.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/build/languages/markdown.min.js"></script>
+    <script>
+      let data = {
+        label: "前端开发工程师学习路径",
+        path: "./docs/前端开发工程师学习大纲.md",
+        children: [
+          {
+            label: "核心技术基础",
+            children: [
+              {
+                label: "HTML5 基础",
+                children: [
+                  {
+                    label: "语义与文档",
+                    path: "./01-核心技术基础/01-HTML5基础/01-语义化标签与结构.md",
+                    children: [],
+                  },
+                  {
+                    label: "表单与交互基础",
+                    path: "./01-核心技术基础/01-HTML5基础/02-表单与交互元素.md",
+                    children: [],
+                  },
+                  {
+                    label: "布局与响应式",
+                    path: "./01-核心技术基础/01-HTML5基础/03-响应式布局.md",
+                    children: [],
+                  },
+                  {
+                    label: "多媒体与 Canvas",
+                    path: "./01-核心技术基础/01-HTML5基础/04-多媒体与Canvas.md",
+                    children: [],
+                  },
+                ],
+              },
+              {
+                label: "CSS3 进阶",
+                children: [
+                  {
+                    label: "flexbox布局",
+                    path: "./01-核心技术基础/02-CSS3进阶/01-Flexbox布局.md",
+                    children: [],
+                  },
+                  {
+                    label: "Grid布局",
+                    path: "./01-核心技术基础/02-CSS3进阶/02-Grid布局.md",
+                    children: [],
+                  },
+                  {
+                    label: "动画与过渡效果",
+                    path: "./01-核心技术基础/02-CSS3进阶/03-动画与过渡效果.md",
+                    children: [],
+                  },
+                  {
+                    label: "预处理器（Sass/Less）",
+                    path: "./01-核心技术基础/02-CSS3进阶/04-预处理器-Sass与Less.md",
+                    children: [],
+                  },
+                  {
+                    label: "媒体查询与响应式策略",
+                    path: "./01-核心技术基础/02-CSS3进阶/05-媒体查询与响应式策略.md",
+                    children: [],
+                  },
+                ],
+              },
+              {
+                label: "JavaScript 核心",
+                children: [
+                  {
+                    label: "入门基础",
+                    children: [
+                      {
+                        label: "ES5 与 ES6 概览",
+                        path: "./01-核心技术基础/03-JavaScript核心/05-JavaScript基础-ES6语法/01-ES5和ES6的介绍.md",
+                        children: [],
+                      },
+                      {
+                        label: "严格模式与 ES5 扩展",
+                        path: "./01-核心技术基础/03-JavaScript核心/05-JavaScript基础-ES6语法/02-ES5中的严格模式.md",
+                        children: [],
+                      },
+                      {
+                        label: "ES5 常用扩展",
+                        path: "./01-核心技术基础/03-JavaScript核心/05-JavaScript基础-ES6语法/03-ES5中的一些扩展.md",
+                        children: [],
+                      },
+                    ],
+                  },
+                  {
+                    label: "ES6 语法基石",
+                    children: [
+                      {
+                        label: "变量：let/const 与块级作用域",
+                        path: "./01-核心技术基础/03-JavaScript核心/05-JavaScript基础-ES6语法/04-ES6-变量-let-const-和块级作用域.md",
+                        children: [],
+                      },
+                      {
+                        label: "解构赋值",
+                        path: "./01-核心技术基础/03-JavaScript核心/05-JavaScript基础-ES6语法/05-ES6-变量的解构赋值.md",
+                        children: [],
+                      },
+                      {
+                        label: "箭头函数与 this",
+                        path: "./01-核心技术基础/03-JavaScript核心/05-JavaScript基础-ES6语法/06-ES6-箭头函数.md",
+                        children: [],
+                      },
+                      {
+                        label: "剩余参数与展开运算符",
+                        path: "./01-核心技术基础/03-JavaScript核心/05-JavaScript基础-ES6语法/07-剩余参数和扩展运算符.md",
+                        children: [],
+                      },
+                      {
+                        label: "字符串/数组/对象扩展",
+                        path: "./01-核心技术基础/03-JavaScript核心/05-JavaScript基础-ES6语法/08-字符串-数组-对象的扩展.md",
+                        children: [],
+                      },
+                      {
+                        label: "Set 数据结构",
+                        path: "./01-核心技术基础/03-JavaScript核心/05-JavaScript基础-ES6语法/09-内置对象扩展-Set数据结构.md",
+                        children: [],
+                      },
+                    ],
+                  },
+                  {
+                    label: "异步与模块化",
+                    children: [
+                      {
+                        label: "Promise 与异步编程",
+                        path: "./01-核心技术基础/03-JavaScript核心/05-JavaScript基础-ES6语法/10-ES6-Promise与异步编程.md",
+                        children: [],
+                      },
+                      {
+                        label: "模块化：import/export",
+                        path: "./01-核心技术基础/03-JavaScript核心/05-JavaScript基础-ES6语法/11-ES6-模块化-import-export.md",
+                        children: [],
+                      },
+                    ],
+                  },
+                  {
+                    label: "面向对象",
+                    children: [
+                      {
+                        label: "类与面向对象",
+                        path: "./01-核心技术基础/03-JavaScript核心/05-JavaScript基础-ES6语法/12-ES6-类与面向对象.md",
+                        children: [],
+                      },
+                    ],
+                  },
+                  {
+                    label: "实战练习与结果输出",
+                    children: [
+                      {
+                        label: "练习：作用域/解构/箭头混合题（含输出）",
+                        path: "./docs/实战/JS-练习-作用域与解构输出.md",
+                        children: [],
+                      },
+                      {
+                        label: "实战：原生 JS 实现 Todo 清单（含截图）",
+                        path: "./docs/实战/JS-实战-Todo清单.md",
+                        children: [],
+                      },
+                      {
+                        label: "实战：Fetch 请求 + DOM 渲染（含输出）",
+                        path: "./docs/实战/JS-实战-Fetch与DOM更新.md",
+                        children: [],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            label: "主流框架与库",
+            children: [
+              // {
+              //   label: "React生态",
+              //   children: [
+              //     {
+              //       label: "React 基础与 JSX",
+              //       children: [],
+              //     },
+              //     {
+              //       label: "Hooks 与 Context API",
+              //       children: [],
+              //     },
+              //     {
+              //       label: "路由：React Router",
+              //       children: [],
+              //     },
+              //     {
+              //       label: "状态管理：Redux / Zustand / Recoil",
+              //       children: [],
+              //     },
+              //     {
+              //       label: "表单与校验、HTTP 请求（Fetch/Axios）",
+              //       children: [],
+              //     },
+              //     {
+              //       label: "SSR / SSG：Next.js",
+              //       children: [],
+              //     },
+              //   ],
+              // },
+              {
+                label: "Vue 基础（从0-1）",
+                children: [
+                  {
+                    label: "入门与环境",
+                    children: [
+                      {
+                        label: "Vue 介绍与基础概念",
+                        path: "./主流框架与库/Vue基础/01-Vue的介绍和vue-cli.md",
+                        children: [],
+                      },
+                      {
+                        label: "系统指令（基础）",
+                        path: "./主流框架与库/Vue基础/02-Vue的系统指令.md",
+                        children: [],
+                      },
+                      {
+                        label: "事件与修饰符",
+                        path: "./主流框架与库/Vue基础/03-v-on的事件修饰符.md",
+                        children: [],
+                      },
+                      {
+                        label: "系统指令（进阶）",
+                        path: "./主流框架与库/Vue基础/04-Vue的系统指令2.md",
+                        children: [],
+                      },
+                    ],
+                  },
+                  {
+                    label: "组件与通信",
+                    children: [
+                      {
+                        label: "组件的定义与注册",
+                        path: "./主流框架与库/Vue基础/11-组件的定义与注册.md",
+                        children: [],
+                      },
+                      {
+                        label: "组件通信与数据传递",
+                        path: "./主流框架与库/Vue基础/12-组件通信与数据传递.md",
+                        children: [],
+                      },
+                      {
+                        label: "生命周期函数",
+                        path: "./主流框架与库/Vue基础/08-生命周期函数.md",
+                        children: [],
+                      },
+                    ],
+                  },
+                  {
+                    label: "路由与状态",
+                    children: [
+                      {
+                        label: "Vue Router 基础",
+                        path: "./主流框架与库/Vue基础/13-VueRouter路由.md",
+                        children: [],
+                      },
+                      {
+                        label: "Vue Router 进阶与导航守卫",
+                        path: "./主流框架与库/Vue基础/17-VueRouter-进阶与导航守卫.md",
+                        children: [],
+                      },
+                      {
+                        label: "Pinia 状态管理入门",
+                        path: "./主流框架与库/Vue基础/16-Pinia-状态管理入门.md",
+                        children: [],
+                      },
+                    ],
+                  },
+                  {
+                    label: "数据与异步",
+                    children: [
+                      {
+                        label: "Ajax 请求与 HTTP",
+                        path: "./主流框架与库/Vue基础/09-Ajax请求与HTTP.md",
+                        children: [],
+                      },
+                      {
+                        label: "计算属性与侦听器",
+                        path: "./主流框架与库/Vue基础/14-计算属性与侦听器.md",
+                        children: [],
+                      },
+                    ],
+                  },
+                  {
+                    label: "进阶特性",
+                    children: [
+                      {
+                        label: "自定义过滤器（示例）",
+                        path: "./主流框架与库/Vue基础/06-自定义过滤器-时间格式化.md",
+                        children: [],
+                      },
+                      {
+                        label: "自定义按键修饰符与指令",
+                        path: "./主流框架与库/Vue基础/07-自定义按键修饰符与自定义指令.md",
+                        children: [],
+                      },
+                      {
+                        label: "动画与过渡",
+                        path: "./主流框架与库/Vue基础/10-Vue动画与过渡.md",
+                        children: [],
+                      },
+                      {
+                        label: "Composition API 基础",
+                        path: "./主流框架与库/Vue基础/15-Composition-API-基础.md",
+                        children: [],
+                      },
+                    ],
+                  },
+                  {
+                    label: "实战练习与结果输出",
+                    children: [
+                      {
+                        label: "列表功能示例（官方示例）",
+                        path: "./主流框架与库/Vue基础/05-列表功能示例.md",
+                        children: [],
+                      },
+                      {
+                        label: "实战：Vue 组件化 Todo（可运行）",
+                        path: "./docs/实战/Vue-实战-Todo组件化.md",
+                        children: [],
+                      },
+                      {
+                        label: "实战：路由与动态详情（可运行）",
+                        path: "./docs/实战/Vue-实战-路由与动态详情.md",
+                        children: [],
+                      },
+                      {
+                        label: "实战：Pinia 计数器（可运行）",
+                        path: "./docs/实战/Vue-实战-Pinia计数器.md",
+                        children: [],
+                      },
+                    ],
+                  },
+                ],
+              },
+              // {
+              //   label: "Angular生态",
+              //   children: [
+              //     {
+              //       label: "框架核心与依赖注入（DI）",
+              //       children: [],
+              //     },
+              //     {
+              //       label: "路由与守卫",
+              //       children: [],
+              //     },
+              //     {
+              //       label: "表单（模板驱动/响应式）",
+              //       children: [],
+              //     },
+              //     {
+              //       label: "服务与 HTTP 通信",
+              //       children: [],
+              //     },
+              //     {
+              //       label: "RxJS 与响应式编程",
+              //       children: [],
+              //     },
+              //   ],
+              // },
+            ],
+          },
+          {
+            label: "工具链与工程化",
+            children: [
+              {
+                label: "构建工具",
+                children: [
+                  // {
+                  //   label: "Webpack配置",
+                  //   children: [],
+                  // },
+                  {
+                    label: "Vite快速开发",
+                    path: "./工具链与工程化/构建工具/Vite快速开发/vite.md",
+                    children: [],
+                  },
+                  // {
+                  //   label: "Babel转译",
+                  //   children: [],
+                  // },
+                ],
+              },
+              //     {
+              //       label: "代码规范",
+              //       children: [
+              //         {
+              //           label: "ESLint配置",
+              //           children: [],
+              //         },
+              //         {
+              //           label: "Prettier格式化",
+              //           children: [],
+              //         },
+              //         {
+              //           label: "Stylelint样式检查",
+              //           children: [],
+              //         },
+              //       ],
+              //     },
+              //     {
+              //       label: "性能优化",
+              //       children: [
+              //         {
+              //           label: "lighthouse性能评估",
+              //           children: [],
+              //         },
+              //         {
+              //           label: "代码分割与懒加载",
+              //           children: [],
+              //         },
+              //         {
+              //           label: "webp图片优化",
+              //           children: [],
+              //         },
+              //       ],
+              // },
+            ],
+          },
+          {
+            label: "项目实战与案例",
+            children: [
+              {
+                label: "个人主页/博客搭建与部署",
+                path: "./工具链与工程化/项目实战与案例/个人主页/博客搭建与部署.md",
+                children: [],
+              },
+            ],
+          },
+        ],
+      };
+      const contentEl = document.getElementById("content");
+      const treeRoot = document.getElementById("treeRoot");
+
+      const md = window.markdownit({
+        html: true,
+        linkify: true,
+        typographer: true,
+        highlight: (str, lang) => {
+          try {
+            if (lang && hljs.getLanguage(lang)) {
+              return (
+                `<pre><code class="hljs language-${lang}">` +
+                hljs.highlight(str, { language: lang, ignoreIllegals: true })
+                  .value +
+                "</code></pre>"
+              );
+            }
+            // 无显式语言：带偏好自动检测，优先识别 xml/html/js/css 等
+            const preferred = [
+              "xml",
+              "html",
+              "javascript",
+              "typescript",
+              "jsx",
+              "tsx",
+              "css",
+              "json",
+              "bash",
+              "shell",
+              "yaml",
+              "markdown",
+            ];
+            const auto = hljs.highlightAuto(str, preferred);
+            // HTML 启发式：包含 doctype、html 或常见标签时强制用 xml/html 语法
+            const looksLikeHtml =
+              /<!doctype/i.test(str) ||
+              /<\s*html[\s>]/i.test(str) ||
+              /<\s*(head|body|div|span|header|footer|main|section|article|nav|h1|h2|h3|p|img|a|ul|li|pre|code)\b/i.test(
+                str
+              );
+            let detected = auto.language || "";
+            if (
+              (!detected || detected === "plaintext" || detected === "text") &&
+              looksLikeHtml
+            ) {
+              detected = "xml";
+              const forced = hljs.highlight(str, {
+                language: detected,
+                ignoreIllegals: true,
+              });
+              return (
+                `<pre><code class="hljs language-${detected}">` +
+                forced.value +
+                "</code></pre>"
+              );
+            }
+            return (
+              `<pre><code class="hljs language-${detected || "auto"}">` +
+              auto.value +
+              "</code></pre>"
+            );
+          } catch (e) {
+            return (
+              '<pre><code class="hljs">' +
+              md.utils.escapeHtml(str) +
+              "</code></pre>"
+            );
+          }
+        },
+      });
+
+      // Tree 状态持久化（当前选中项 + 展开项）
+      const STORAGE_KEY = "treeStateV1";
+      function loadState() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return { activePath: "", expandedSlugs: [] };
+          const parsed = JSON.parse(raw);
+          return {
+            activePath: parsed.activePath || "",
+            expandedSlugs: Array.isArray(parsed.expandedSlugs)
+              ? parsed.expandedSlugs
+              : [],
+          };
+        } catch {
+          return { activePath: "", expandedSlugs: [] };
+        }
+      }
+      function saveState(partial) {
+        const prev = loadState();
+        const next = { ...prev, ...partial };
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        } catch {}
+      }
+      function scrollContentToTop(smooth = true) {
+        const scroller = document.querySelector(".main");
+        if (scroller && typeof scroller.scrollTo === "function") {
+          scroller.scrollTo({
+            top: 0,
+            left: 0,
+            behavior: smooth ? "smooth" : "auto",
+          });
+        }
+      }
+      function setExpanded(slug, expanded, isTopLevel = false) {
+        const state = loadState();
+        const set = new Set(state.expandedSlugs || []);
+        if (expanded) set.add(slug);
+        else set.delete(slug);
+        if (expanded && isTopLevel) {
+          // 只允许一个顶级展开：移除其它顶级 slug
+          const topRows = Array.from(
+            document.querySelectorAll("ul.tree > li.tree-item > .tree-row")
+          );
+          const topSlugs = new Set(topRows.map((r) => r.dataset.slug || ""));
+          for (const s of Array.from(set)) {
+            if (topSlugs.has(s) && s !== slug) set.delete(s);
+          }
+          // 同步关闭其它顶级面板（视觉）
+          const currentLi = document.querySelector(
+            `ul.tree > li.tree-item > .tree-row[data-slug="${slug}"]`
+          )?.parentElement;
+          if (currentLi && currentLi.parentElement) {
+            Array.from(currentLi.parentElement.children).forEach((sib) => {
+              if (
+                sib !== currentLi &&
+                sib.classList &&
+                !sib.classList.contains("collapsed")
+              ) {
+                // 用动画方式收起其它顶级
+                collapseAnimated(sib);
+                const t = sib.querySelector(":scope > .tree-row .tree-toggle");
+                if (t) t.textContent = "▸";
+              }
+            });
+            // 确保当前顶级为展开状态（带动画）
+            if (currentLi.classList.contains("collapsed")) {
+              expandAnimated(currentLi);
+              const t = currentLi.querySelector(
+                ":scope > .tree-row .tree-toggle"
+              );
+              if (t) t.textContent = "▾";
+            }
+          }
+        }
+        saveState({ expandedSlugs: Array.from(set) });
+        if (expanded && isTopLevel) {
+          scrollContentToTop(true);
+        }
+      }
+
+      function expandAnimated(li) {
+        const children = li.querySelector(":scope > .tree-children");
+        if (!children) return;
+        // 从 0 到内容高度的过渡，使用双 rAF 保证起始值被浏览器采纳
+        const full = children.scrollHeight;
+        children.style.maxHeight = "0px";
+        children.style.opacity = "0";
+        li.classList.remove("collapsed");
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            children.style.maxHeight = full + "px";
+            children.style.opacity = "1";
+          });
+        });
+        const cleanup = () => {
+          children.style.maxHeight = "";
+        };
+        const onEnd = (e) => {
+          if (e.propertyName === "max-height") {
+            children.removeEventListener("transitionend", onEnd);
+            cleanup();
+          }
+        };
+        children.addEventListener("transitionend", onEnd);
+        setTimeout(cleanup, 500); // 兜底，防止极端情况下未触发 end
+      }
+      function collapseAnimated(li) {
+        const children = li.querySelector(":scope > .tree-children");
+        if (!children) return;
+        // 从当前高度到 0 的过渡，用双 rAF 确保更顺滑
+        const full = children.scrollHeight;
+        children.style.maxHeight = full + "px";
+        children.style.opacity = "1";
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            li.classList.add("collapsed");
+            children.style.maxHeight = "0px";
+            children.style.opacity = "0";
+          });
+        });
+      }
+
+      function getAncestors(li) {
+        const arr = [];
+        let cur = li?.parentElement?.closest(".tree-item");
+        while (cur) {
+          arr.push(cur);
+          cur = cur.parentElement?.closest(".tree-item");
+        }
+        return arr;
+      }
+
+      function collapseAllExcept(targetLi) {
+        if (!targetLi) return;
+        const keepSet = new Set([targetLi, ...getAncestors(targetLi)]);
+        treeRoot.querySelectorAll("li.tree-item").forEach((item) => {
+          const hasChildren = !!item.querySelector(":scope > .tree-children");
+          if (!hasChildren) return;
+          if (keepSet.has(item)) {
+            if (item.classList.contains("collapsed")) {
+              expandAnimated(item);
+              const t = item.querySelector(":scope > .tree-row .tree-toggle");
+              if (t) t.textContent = "▾";
+            }
+          } else {
+            if (!item.classList.contains("collapsed")) {
+              collapseAnimated(item);
+              const t = item.querySelector(":scope > .tree-row .tree-toggle");
+              if (t) t.textContent = "▸";
+            }
+          }
+        });
+        const expandedSlugs = Array.from(
+          treeRoot.querySelectorAll(
+            "li.tree-item:not(.collapsed) > .tree-row[data-slug]"
+          )
+        )
+          .map((r) => r.dataset.slug || "")
+          .filter(Boolean);
+        saveState({ expandedSlugs });
+      }
+      function applyHighlightToContent(rootEl) {
+        if (!rootEl || !window.hljs) return;
+        const preferred = [
+          "xml",
+          "html",
+          "javascript",
+          "typescript",
+          "jsx",
+          "tsx",
+          "css",
+          "json",
+          "bash",
+          "shell",
+          "yaml",
+          "markdown",
+        ];
+        const looksLikeHtml = (text) =>
+          /<!doctype/i.test(text) ||
+          /<\s*html[\s>]/i.test(text) ||
+          /<\s*(head|body|div|span|header|footer|main|section|article|nav|h1|h2|h3|p|img|a|ul|li|pre|code)\b/i.test(
+            text
+          );
+        rootEl.querySelectorAll("pre code").forEach((code) => {
+          const raw = code.textContent || "";
+          // 优先使用代码块已有的 language-xxx
+          let lang = Array.from(code.classList).find((c) =>
+            c.startsWith("language-")
+          );
+          lang = lang ? lang.replace("language-", "") : "";
+          let result = null;
+          try {
+            if (lang && hljs.getLanguage(lang)) {
+              result = hljs.highlight(raw, {
+                language: lang,
+                ignoreIllegals: true,
+              });
+            } else {
+              result = hljs.highlightAuto(raw, preferred);
+              if (
+                (!result.language ||
+                  result.language === "plaintext" ||
+                  result.language === "text") &&
+                looksLikeHtml(raw)
+              ) {
+                result = hljs.highlight(raw, {
+                  language: "xml",
+                  ignoreIllegals: true,
+                });
+              }
+            }
+            if (result) {
+              code.innerHTML = result.value;
+              code.classList.add("hljs");
+              const finalLang =
+                result.language || lang || (looksLikeHtml(raw) ? "xml" : "");
+              if (finalLang) code.classList.add(`language-${finalLang}`);
+            }
+          } catch (e) {
+            // 忽略高亮错误，保持原文
+          }
+        });
+      }
+
+      function renderMarkdown(text, title = "") {
+        contentEl.innerHTML = md.render(text);
+        // 渲染后进行代码高亮（覆盖未通过 md 高亮的内联 <pre><code>）
+        applyHighlightToContent(contentEl);
+        document.title = title ? `${title} - Markdown 预览` : "Markdown 预览";
+      }
+
+      function slugify(text) {
+        return (
+          text
+            .toLowerCase()
+            .trim()
+            // 保留中英文、数字与空格/连接符
+            .replace(/[^\u4e00-\u9fa5\w\s-]/g, "")
+            .replace(/\s+/g, "-")
+        );
+      }
+
+      function getNodePath(node) {
+        if (node.path) return node.path;
+        const base = "./docs/";
+        return base + slugify(node.label) + ".md";
+      }
+
+      async function loadAndRenderNode(node) {
+        const path = getNodePath(node);
+        scrollContentToTop(true);
+        try {
+          const res = await fetch(encodeURI(path));
+          if (!res.ok) throw new Error(res.statusText);
+          const text = await res.text();
+          renderMarkdown(text, node.label);
+        } catch (e) {
+          renderMarkdown(
+            `# ${node.label}\n\n> 未找到文档：\`${path}\``,
+            node.label
+          );
+        }
+      }
+
+      function renderTreeFromData(rootData) {
+        if (!treeRoot) return;
+        treeRoot.innerHTML = "";
+        const ul = document.createElement("ul");
+        ul.className = "tree";
+        treeRoot.appendChild(ul);
+
+        const createItem = (node) => {
+          const li = document.createElement("li");
+          li.className = "tree-item";
+          if (node.children && node.children.length) {
+            li.classList.add("collapsed");
+          }
+          const row = document.createElement("div");
+          row.className = "tree-row";
+          row.dataset.slug = slugify(node.label);
+          if (node.path) row.dataset.path = getNodePath(node);
+
+          if (node.children && node.children.length) {
+            const toggle = document.createElement("span");
+            toggle.className = "tree-toggle";
+            toggle.textContent = "▸";
+            toggle.setAttribute("aria-hidden", "true");
+            toggle.addEventListener("click", (e) => {
+              e.stopPropagation();
+              const isCollapsed = li.classList.contains("collapsed");
+              if (isCollapsed) {
+                expandAnimated(li);
+                toggle.textContent = "▾";
+              } else {
+                collapseAnimated(li);
+                toggle.textContent = "▸";
+              }
+              const isTopLevel =
+                li.parentElement && li.parentElement.classList.contains("tree");
+              setExpanded(row.dataset.slug || "", isCollapsed, !!isTopLevel);
+            });
+            row.appendChild(toggle);
+          } else {
+            const spacer = document.createElement("span");
+            spacer.className = "tree-toggle";
+            spacer.textContent = "•";
+            spacer.style.opacity = "0.3";
+            row.appendChild(spacer);
+          }
+
+          const text = document.createElement("span");
+          text.textContent = node.label || "(未命名)";
+          row.appendChild(text);
+
+          row.addEventListener("click", () => {
+            const hasChildren = !!(node.children && node.children.length);
+            const hasPath = !!node.path;
+            if (hasPath) {
+              document
+                .querySelectorAll(".tree-row.active")
+                .forEach((r) => r.classList.remove("active"));
+              row.classList.add("active");
+              loadAndRenderNode(node);
+              // 记录当前激活文档路径
+              saveState({ activePath: getNodePath(node) });
+              // 仅保留当前节点分支展开，其它分支带动画关闭
+              const selfLi = row.closest(".tree-item");
+              collapseAllExcept(selfLi);
+            } else if (hasChildren) {
+              // 仅展开/收起，不更换右侧内容
+              const isCollapsed = li.classList.contains("collapsed");
+              if (isCollapsed) {
+                expandAnimated(li);
+                // 点击目录名展开时，仅保留该目录分支
+                collapseAllExcept(li);
+              } else {
+                collapseAnimated(li);
+              }
+              const toggleEl = row.querySelector(".tree-toggle");
+              if (toggleEl) toggleEl.textContent = isCollapsed ? "▾" : "▸";
+              const isTopLevel =
+                li.parentElement && li.parentElement.classList.contains("tree");
+              setExpanded(row.dataset.slug || "", isCollapsed, !!isTopLevel);
+            } else {
+              // 无 path 的叶子节点：不做任何内容加载
+            }
+          });
+
+          li.appendChild(row);
+          if (node.children && node.children.length) {
+            const children = document.createElement("ul");
+            children.className = "tree-children";
+            node.children.forEach((c) => children.appendChild(createItem(c)));
+            li.appendChild(children);
+          }
+          return li;
+        };
+
+        // 直接渲染根节点（既展示根节点本身，也展示其 children）
+        ul.appendChild(createItem(rootData));
+
+        // 应用持久化的展开状态
+        const state = loadState();
+        if (state.expandedSlugs && state.expandedSlugs.length) {
+          state.expandedSlugs.forEach((slug) => {
+            const row = treeRoot.querySelector(
+              `.tree-row[data-slug="${slug}"]`
+            );
+            if (row) {
+              const li = row.closest(".tree-item");
+              if (li && li.classList.contains("collapsed")) {
+                li.classList.remove("collapsed");
+                const t = row.querySelector(".tree-toggle");
+                if (t) t.textContent = "▾";
+              }
+            }
+          });
+          // 恢复后也保证仅一个顶级展开
+          const openTop = Array.from(
+            treeRoot.querySelectorAll("ul.tree > li.tree-item:not(.collapsed)")
+          );
+          if (openTop.length > 1) {
+            openTop.slice(1).forEach((li) => {
+              li.classList.add("collapsed");
+              const t = li.querySelector(":scope > .tree-row .tree-toggle");
+              if (t) t.textContent = "▸";
+            });
+            // 清理存储，仅保留第一个顶级展开
+            const firstSlug =
+              openTop[0].querySelector(":scope > .tree-row")?.dataset.slug ||
+              "";
+            if (firstSlug) {
+              setExpanded(firstSlug, true, true);
+            }
+          }
+        }
+
+        // 若有已保存的激活路径，则恢复之；否则默认选中第一个含 path 的节点
+        const activateSaved = (() => {
+          const activePath = state.activePath;
+          if (!activePath) return false;
+          const rows = treeRoot.querySelectorAll(".tree-row[data-path]");
+          let target = null;
+          rows.forEach((r) => {
+            if (!target && r.dataset.path === activePath) target = r;
+          });
+          if (!target) return false;
+          // 展开所有祖先
+          let li = target.closest(".tree-item");
+          while (li) {
+            if (li.classList.contains("collapsed")) {
+              li.classList.remove("collapsed");
+              const t = li.querySelector(":scope > .tree-row .tree-toggle");
+              if (t) t.textContent = "▾";
+            }
+            li = li.parentElement?.closest(".tree-item");
+          }
+          // 激活并加载
+          document
+            .querySelectorAll(".tree-row.active")
+            .forEach((r) => r.classList.remove("active"));
+          target.classList.add("active");
+          loadAndRenderNode({
+            label: target.textContent || "",
+            path: activePath,
+          });
+          return true;
+        })();
+
+        if (activateSaved) return;
+
+        // 默认：展开根节点并加载根节点对应的文档（若 root 带有 path）
+        const rootSlug = slugify(rootData.label || "");
+        const rootRow = treeRoot.querySelector(
+          `.tree-row[data-slug="${rootSlug}"]`
+        );
+        if (rootRow) {
+          const rootLi = rootRow.closest(".tree-item");
+          if (rootLi && rootLi.classList.contains("collapsed")) {
+            rootLi.classList.remove("collapsed");
+            const t = rootLi.querySelector(":scope > .tree-row .tree-toggle");
+            if (t) t.textContent = "▾";
+          }
+          // 如果根节点有 path，则默认激活并加载它对应的文档
+          if (rootData.path || rootRow.dataset.path) {
+            document
+              .querySelectorAll(".tree-row.active")
+              .forEach((r) => r.classList.remove("active"));
+            rootRow.classList.add("active");
+            loadAndRenderNode(rootData);
+            saveState({
+              expandedSlugs: [rootSlug],
+              activePath: getNodePath(rootData),
+            });
+            return;
+          }
+        }
+        // 若根节点没有 path，提示用户选择条目
+        renderMarkdown("选择左侧条目以加载文档");
+      }
+
+      // 初始化：用 data 构建树
+      renderTreeFromData(data);
+    </script>
+  </body>
+</html>
