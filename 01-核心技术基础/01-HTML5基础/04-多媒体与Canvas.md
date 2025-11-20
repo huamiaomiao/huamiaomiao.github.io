@@ -64,7 +64,7 @@ function setupHiDpiCanvas(canvas) {
 
 ## 练习
 
-- 用 Canvas 绘制一个进度环与动画加载。\*\*\*
+- 用 Canvas 绘制一个进度环与动画加载。
 
 ---
 

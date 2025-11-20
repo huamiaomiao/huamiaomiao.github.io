@@ -46,7 +46,7 @@ async function getUser() {
 
 ## 练习
 
-- 封装一个 `withTimeout(promise, ms)`，超时则 reject。\*\*\*
+- 封装一个 `withTimeout(promise, ms)`，超时则 reject。
 
 ---
 

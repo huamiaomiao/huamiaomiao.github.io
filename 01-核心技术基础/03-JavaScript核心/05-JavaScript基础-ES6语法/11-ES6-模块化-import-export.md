@@ -30,7 +30,7 @@ export { area as circleArea } from "./math.js";
 ## 注意
 
 - ESM 静态结构利于 Tree-Shaking；
-- 浏览器原生模块需加 `type="module"`。\*\*\*
+- 浏览器原生模块需加 `type="module"`。
 
 ---
 
