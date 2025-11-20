@@ -136,10 +136,7 @@
         color: #57606a;
         transition: transform 0.18s ease;
       }
-      /* 展开时让箭头旋转（若字符是 ▸ 也能形成视觉“向下”效果） */
-      .tree-item:not(.collapsed) > .tree-row .tree-toggle {
-        transform: rotate(90deg);
-      }
+
       .tree-children {
         margin-left: 16px;
         padding-left: 12px;
@@ -336,12 +333,35 @@
         color: #24292f;
         letter-spacing: 0.3px;
       }
+      .toolbar a.toolbar-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        border: 1px solid #d0d7de;
+        border-radius: 6px;
+        background: #f6f8fa;
+        color: #0969da;
+        text-decoration: none;
+        font-weight: 500;
+        font-size: 14px;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease,
+          box-shadow 0.15s ease;
+      }
+      .toolbar a.toolbar-link:hover {
+        background: #eef2f7;
+        opacity: 0.8;
+        color: blue;
+        box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
+      }
     </style>
   </head>
   <body>
     <div class="toolbar">
       <div class="app-title">📚 前端学习路径</div>
       <a
+        class="toolbar-link"
         href="./前端学习路径.png"
         target="_blank"
         rel="noopener"
